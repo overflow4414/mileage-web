@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KE 마일리지 스캐너</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .available { @apply bg-green-100 text-green-800 border-green-200; }
+        .waitlist { @apply bg-yellow-50 text-yellow-600 border-yellow-100; }
+        .none { @apply text-gray-300 bg-gray-50; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans p-4 md:p-8">
+    <div class="max-w-4xl mx-auto">
+        <header class="mb-8 flex justify-between items-end border-b pb-4">
+            <div>
+                <h1 class="text-2xl font-bold text-sky-800">✈️ KE 보너스 좌석 현황</h1>
+                <p class="text-sm text-gray-500 mt-1">업데이트: <span id="last-updated">-</span></p>
+            </div>
+            <a href="https://www.koreanair.com" target="_blank" class="text-xs bg-sky-600 text-white px-3 py-1 rounded hover:bg-sky-700">대한항공 바로가기</a>
+        </header>
+
+        <div id="loading" class="text-center py-20 text-gray-400">데이터 불러오는 중...</div>
+        <div id="content" class="space-y-8 hidden"></div>
+    </div>
+
+    <script>
+        async function loadData() {
+            try {
+                // Fetch generated JSON
+                const res = await fetch('data.json?t=' + Date.now());
+                if (!res.ok) throw new Error("데이터 파일 없음");
+                const data = await res.json();
+
+                document.getElementById('last-updated').innerText = data.updatedAt || '알 수 없음';
+                
+                const container = document.getElementById('content');
+                container.innerHTML = '';
+
+                // Group by route
+                Object.entries(data.routes || {}).forEach(([route, dates]) => {
+                    if (Object.keys(dates).length === 0) return;
+
+                    const section = document.createElement('div');
+                    section.className = 'bg-white rounded-lg shadow-sm p-5 border border-gray-100';
+                    
+                    const [origin, dest] = route.split('-');
+                    
+                    // Route Header
+                    let html = `
+                        <div class="flex items-center gap-2 mb-4 border-b pb-2">
+                            <span class="text-lg font-bold">${origin}</span>
+                            <span class="text-gray-400">→</span>
+                            <span class="text-lg font-bold">${dest}</span>
+                            <span class="ml-auto text-xs font-mono text-gray-400 bg-gray-100 px-2 py-1 rounded">${Object.keys(dates).length}일 가능</span>
+                        </div>
+                        <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+                    `;
+
+                    // Sort dates
+                    const sortedDates = Object.keys(dates).sort();
+                    
+                    sortedDates.forEach(dateStr => {
+                        const classes = dates[dateStr]; // list of seats e.g. ['prestige', 'economy']
+                        const isPrestige = classes.some(c => c.includes('business') || c.includes('prestige'));
+                        const isFirst = classes.some(c => c.includes('first'));
+                        
+                        let colorClass = 'bg-gray-50 border-gray-100 text-gray-600';
+                        let badge = '';
+
+                        if (isFirst) {
+                            colorClass = 'bg-purple-50 border-purple-200 text-purple-700 ring-1 ring-purple-100';
+                            badge = 'First';
+                        } else if (isPrestige) {
+                            colorClass = 'bg-emerald-50 border-emerald-200 text-emerald-700 ring-1 ring-emerald-100';
+                            badge = 'Biz';
+                        } else {
+                            colorClass = 'bg-blue-50 border-blue-100 text-blue-600';
+                            badge = 'Eco';
+                        }
+
+                        // Format date: 2026-05-21 -> 05/21 (Day)
+                        const d = new Date(dateStr);
+                        const dayName = ['일','월','화','수','목','금','토'][d.getDay()];
+                        const shortDate = `${d.getMonth()+1}/${d.getDate()}`;
+
+                        html += `
+                            <div class="flex flex-col items-center p-2 rounded border ${colorClass} text-center transition hover:scale-105 cursor-default" title="${classes.join(', ')}">
+                                <span class="text-xs opacity-70">${dayName}</span>
+                                <span class="font-bold text-lg leading-tight">${shortDate}</span>
+                                <span class="text-[10px] font-bold uppercase mt-1 px-1.5 rounded-full bg-white/50">${badge}</span>
+                            </div>
+                        `;
+                    });
+
+                    html += `</div>`;
+                    section.innerHTML = html;
+                    container.appendChild(section);
+                });
+
+                document.getElementById('loading').classList.add('hidden');
+                container.classList.remove('hidden');
+
+            } catch (e) {
+                document.getElementById('loading').innerHTML = `
+                    <p class="text-red-500">데이터 로드 실패 😢</p>
+                    <p class="text-sm mt-2 text-gray-400">${e.message}</p>
+                `;
+            }
+        }
+
+        loadData();
+    </script>
+</body>
+</html>
