@@ -9,107 +9,266 @@
         .available { @apply bg-green-100 text-green-800 border-green-200; }
         .waitlist { @apply bg-yellow-50 text-yellow-600 border-yellow-100; }
         .none { @apply text-gray-300 bg-gray-50; }
+        
+        /* Smooth transitions */
+        .route-card {
+            transition: all 0.2s ease;
+        }
+        .route-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        /* Filter pills */
+        .filter-pill {
+            @apply px-4 py-2 rounded-full text-sm font-medium cursor-pointer transition-all;
+        }
+        .filter-pill.active {
+            @apply ring-2 ring-offset-2;
+        }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-900 font-sans p-4 md:p-8">
-    <div class="max-w-4xl mx-auto">
-        <header class="mb-8 flex justify-between items-end border-b pb-4">
-            <div>
-                <h1 class="text-2xl font-bold text-sky-800">✈️ KE 보너스 좌석 현황</h1>
-                <p class="text-sm text-gray-500 mt-1">업데이트: <span id="last-updated">-</span></p>
+<body class="bg-gradient-to-br from-sky-50 via-white to-blue-50 text-gray-900 font-sans min-h-screen">
+    <div class="max-w-6xl mx-auto p-4 md:p-8">
+        <!-- Header -->
+        <header class="mb-8 pb-6 border-b-2 border-sky-200">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+                <div>
+                    <h1 class="text-3xl md:text-4xl font-bold text-sky-900 mb-2">
+                        ✈️ 대한항공 마일리지 스캐너
+                    </h1>
+                    <p class="text-sm text-gray-600">
+                        출발: <span class="font-bold text-sky-700">인천 (ICN)</span> · 
+                        업데이트: <span id="last-updated" class="font-mono text-xs bg-gray-100 px-2 py-1 rounded">-</span>
+                    </p>
+                </div>
+                <a href="https://www.koreanair.com/booking/book-and-manage/award-seat-availability" 
+                   target="_blank" 
+                   class="text-sm bg-sky-600 text-white px-5 py-2.5 rounded-lg hover:bg-sky-700 transition shadow-sm hover:shadow-md whitespace-nowrap">
+                    대한항공 예약 →
+                </a>
             </div>
-            <a href="https://www.koreanair.com" target="_blank" class="text-xs bg-sky-600 text-white px-3 py-1 rounded hover:bg-sky-700">대한항공 바로가기</a>
         </header>
 
-        <div id="loading" class="text-center py-20 text-gray-400">데이터 불러오는 중...</div>
-        <div id="content" class="space-y-8 hidden"></div>
+        <!-- Filters -->
+        <div class="mb-6 p-5 bg-white rounded-xl shadow-sm border border-gray-100">
+            <div class="grid md:grid-cols-2 gap-6">
+                <!-- Destination Filter -->
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">도착지 선택</label>
+                    <select id="dest-filter" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent bg-white text-gray-900">
+                        <option value="all">전체 노선</option>
+                        <option value="LAX">로스앤젤레스 (LAX)</option>
+                        <option value="SFO">샌프란시스코 (SFO)</option>
+                        <option value="LAS">라스베가스 (LAS)</option>
+                        <option value="LHR">런던 히드로 (LHR)</option>
+                        <option value="FRA">프랑크푸르트 (FRA)</option>
+                        <option value="CDG">파리 샤를드골 (CDG)</option>
+                    </select>
+                </div>
+
+                <!-- Class Filter -->
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">클래스</label>
+                    <div class="flex gap-2 flex-wrap">
+                        <button data-class="all" class="filter-pill active bg-gray-100 text-gray-700 ring-gray-300">전체</button>
+                        <button data-class="first" class="filter-pill bg-purple-50 text-purple-700 hover:bg-purple-100">퍼스트</button>
+                        <button data-class="business" class="filter-pill bg-emerald-50 text-emerald-700 hover:bg-emerald-100">프레스티지</button>
+                        <button data-class="economy" class="filter-pill bg-blue-50 text-blue-600 hover:bg-blue-100">일반석</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="text-center py-20">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-sky-200 border-t-sky-600 mb-4"></div>
+            <p class="text-gray-500">데이터 불러오는 중...</p>
+        </div>
+
+        <!-- Content -->
+        <div id="content" class="space-y-6 hidden"></div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="hidden text-center py-20">
+            <div class="text-6xl mb-4">😔</div>
+            <p class="text-gray-500 text-lg">선택한 조건에 맞는 좌석이 없습니다</p>
+        </div>
+
+        <!-- Footer -->
+        <footer class="mt-12 pt-6 border-t border-gray-200 text-center text-sm text-gray-500">
+            <p>💡 이 데이터는 자동으로 수집되며 참고용입니다. 정확한 정보는 대한항공 공식 사이트에서 확인하세요.</p>
+            <p class="mt-2">Made with ❤️ · <a href="https://github.com/overflow4414/mileage-web" target="_blank" class="text-sky-600 hover:underline">GitHub</a></p>
+        </footer>
     </div>
 
     <script>
+        let allData = {};
+        let currentDestFilter = 'all';
+        let currentClassFilter = 'all';
+
+        // Load data
         async function loadData() {
             try {
-                // Fetch generated JSON
                 const res = await fetch('data.json?t=' + Date.now());
                 if (!res.ok) throw new Error("데이터 파일 없음");
                 const data = await res.json();
 
+                allData = data;
                 document.getElementById('last-updated').innerText = data.updatedAt || '알 수 없음';
                 
-                const container = document.getElementById('content');
-                container.innerHTML = '';
-
-                // Group by route
-                Object.entries(data.routes || {}).forEach(([route, dates]) => {
-                    if (Object.keys(dates).length === 0) return;
-
-                    const section = document.createElement('div');
-                    section.className = 'bg-white rounded-lg shadow-sm p-5 border border-gray-100';
-                    
-                    const [origin, dest] = route.split('-');
-                    
-                    // Route Header
-                    let html = `
-                        <div class="flex items-center gap-2 mb-4 border-b pb-2">
-                            <span class="text-lg font-bold">${origin}</span>
-                            <span class="text-gray-400">→</span>
-                            <span class="text-lg font-bold">${dest}</span>
-                            <span class="ml-auto text-xs font-mono text-gray-400 bg-gray-100 px-2 py-1 rounded">${Object.keys(dates).length}일 가능</span>
-                        </div>
-                        <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                    `;
-
-                    // Sort dates
-                    const sortedDates = Object.keys(dates).sort();
-                    
-                    sortedDates.forEach(dateStr => {
-                        const classes = dates[dateStr]; // list of seats e.g. ['prestige', 'economy']
-                        const isPrestige = classes.some(c => c.includes('business') || c.includes('prestige'));
-                        const isFirst = classes.some(c => c.includes('first'));
-                        
-                        let colorClass = 'bg-gray-50 border-gray-100 text-gray-600';
-                        let badge = '';
-
-                        if (isFirst) {
-                            colorClass = 'bg-purple-50 border-purple-200 text-purple-700 ring-1 ring-purple-100';
-                            badge = 'First';
-                        } else if (isPrestige) {
-                            colorClass = 'bg-emerald-50 border-emerald-200 text-emerald-700 ring-1 ring-emerald-100';
-                            badge = 'Biz';
-                        } else {
-                            colorClass = 'bg-blue-50 border-blue-100 text-blue-600';
-                            badge = 'Eco';
-                        }
-
-                        // Format date: 2026-05-21 -> 05/21 (Day)
-                        const d = new Date(dateStr);
-                        const dayName = ['일','월','화','수','목','금','토'][d.getDay()];
-                        const shortDate = `${d.getMonth()+1}/${d.getDate()}`;
-
-                        html += `
-                            <div class="flex flex-col items-center p-2 rounded border ${colorClass} text-center transition hover:scale-105 cursor-default" title="${classes.join(', ')}">
-                                <span class="text-xs opacity-70">${dayName}</span>
-                                <span class="font-bold text-lg leading-tight">${shortDate}</span>
-                                <span class="text-[10px] font-bold uppercase mt-1 px-1.5 rounded-full bg-white/50">${badge}</span>
-                            </div>
-                        `;
-                    });
-
-                    html += `</div>`;
-                    section.innerHTML = html;
-                    container.appendChild(section);
-                });
-
+                renderRoutes();
+                
                 document.getElementById('loading').classList.add('hidden');
-                container.classList.remove('hidden');
 
             } catch (e) {
                 document.getElementById('loading').innerHTML = `
-                    <p class="text-red-500">데이터 로드 실패 😢</p>
+                    <p class="text-red-500 text-lg">데이터 로드 실패 😢</p>
                     <p class="text-sm mt-2 text-gray-400">${e.message}</p>
                 `;
             }
         }
 
+        // Render routes based on filters
+        function renderRoutes() {
+            const container = document.getElementById('content');
+            const emptyState = document.getElementById('empty-state');
+            container.innerHTML = '';
+
+            const routes = allData.routes || {};
+            let visibleCount = 0;
+
+            Object.entries(routes).forEach(([route, dates]) => {
+                const [origin, dest] = route.split('-');
+
+                // Apply destination filter
+                if (currentDestFilter !== 'all' && dest !== currentDestFilter) {
+                    return;
+                }
+
+                // Apply class filter
+                let filteredDates = {};
+                Object.entries(dates).forEach(([dateStr, classes]) => {
+                    if (currentClassFilter === 'all') {
+                        filteredDates[dateStr] = classes;
+                    } else {
+                        const matchesClass = classes.some(c => {
+                            if (currentClassFilter === 'first') return c.includes('first');
+                            if (currentClassFilter === 'business') return c.includes('business') || c.includes('prestige');
+                            if (currentClassFilter === 'economy') return c.includes('economy');
+                            return false;
+                        });
+                        if (matchesClass) {
+                            filteredDates[dateStr] = classes;
+                        }
+                    }
+                });
+
+                if (Object.keys(filteredDates).length === 0) return;
+
+                visibleCount++;
+                const section = createRouteCard(origin, dest, filteredDates);
+                container.appendChild(section);
+            });
+
+            if (visibleCount === 0) {
+                container.classList.add('hidden');
+                emptyState.classList.remove('hidden');
+            } else {
+                container.classList.remove('hidden');
+                emptyState.classList.add('hidden');
+            }
+        }
+
+        // Create route card
+        function createRouteCard(origin, dest, dates) {
+            const section = document.createElement('div');
+            section.className = 'route-card bg-white rounded-xl shadow-sm p-6 border border-gray-100';
+
+            const destNames = {
+                'LAX': '로스앤젤레스',
+                'SFO': '샌프란시스코',
+                'LAS': '라스베가스',
+                'LHR': '런던',
+                'FRA': '프랑크푸르트',
+                'CDG': '파리'
+            };
+
+            let html = `
+                <div class="flex items-center justify-between mb-5 pb-3 border-b border-gray-100">
+                    <div class="flex items-center gap-3">
+                        <span class="text-2xl font-bold text-gray-800">${origin}</span>
+                        <svg class="w-6 h-6 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                        </svg>
+                        <div>
+                            <span class="text-2xl font-bold text-sky-700">${dest}</span>
+                            <span class="block text-xs text-gray-500 mt-0.5">${destNames[dest] || dest}</span>
+                        </div>
+                    </div>
+                    <span class="text-sm font-semibold bg-sky-50 text-sky-700 px-3 py-1.5 rounded-full">
+                        ${Object.keys(dates).length}일 가능
+                    </span>
+                </div>
+                <div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-7 gap-3">
+            `;
+
+            const sortedDates = Object.keys(dates).sort();
+
+            sortedDates.forEach(dateStr => {
+                const classes = dates[dateStr];
+                const isPrestige = classes.some(c => c.includes('business') || c.includes('prestige'));
+                const isFirst = classes.some(c => c.includes('first'));
+
+                let colorClass = 'bg-blue-50 border-blue-200 text-blue-700';
+                let badge = 'Eco';
+                let ringClass = '';
+
+                if (isFirst) {
+                    colorClass = 'bg-purple-50 border-purple-200 text-purple-700';
+                    badge = '퍼스트';
+                    ringClass = 'ring-2 ring-purple-200';
+                } else if (isPrestige) {
+                    colorClass = 'bg-emerald-50 border-emerald-200 text-emerald-700';
+                    badge = '프레';
+                    ringClass = 'ring-2 ring-emerald-200';
+                }
+
+                const d = new Date(dateStr);
+                const dayName = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
+                const shortDate = `${d.getMonth() + 1}/${d.getDate()}`;
+
+                html += `
+                    <div class="flex flex-col items-center p-3 rounded-lg border-2 ${colorClass} ${ringClass} text-center transition-all hover:scale-105 cursor-default shadow-sm hover:shadow-md"
+                         title="${classes.join(', ')}">
+                        <span class="text-xs opacity-70 font-medium">${dayName}</span>
+                        <span class="font-bold text-lg leading-tight my-1">${shortDate}</span>
+                        <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-white/60">${badge}</span>
+                    </div>
+                `;
+            });
+
+            html += `</div>`;
+            section.innerHTML = html;
+            return section;
+        }
+
+        // Event listeners
+        document.getElementById('dest-filter').addEventListener('change', (e) => {
+            currentDestFilter = e.target.value;
+            renderRoutes();
+        });
+
+        document.querySelectorAll('.filter-pill').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                currentClassFilter = e.target.dataset.class;
+                renderRoutes();
+            });
+        });
+
+        // Initialize
         loadData();
     </script>
 </body>

@@ -1,47 +1,115 @@
 #!/bin/bash
 set -e
 
+# ============================================
+# KE Mileage Web Deployment Script
+# ============================================
+# This script:
+# 1. Scans 6 key routes (LAX, SFO, LAS, LHR, FRA, CDG)
+# 2. Merges scan results into data.json
+# 3. Commits and pushes to GitHub
+# ============================================
+
 # Base dirs
-# This script is inside projects/mileage-web/
 WEB_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$(dirname "$WEB_DIR")")"
 SCANNER_DIR="$PROJECT_ROOT/projects/web-automation"
 TEMP_DIR="/tmp/ke-scan-results"
 
+# Config
+MONTHS=6
+CLASSES="business,first"
+
 # Ensure temp dir
 mkdir -p "$TEMP_DIR"
 rm -f "$TEMP_DIR"/*.json
 
-echo "🚀 [Mileage Web] Starting update..."
+echo "🚀 [KE Mileage Web] Starting deployment..."
 echo "📂 Web Dir: $WEB_DIR"
 echo "🛠 Scanner: $SCANNER_DIR"
+echo "📅 Scanning $MONTHS months ahead"
+echo ""
 
-# 1. Run Scans
-# (NOTE: Adjust months/routes as needed)
+# Verify scanner exists
+if [ ! -d "$SCANNER_DIR" ]; then
+    echo "❌ Error: Scanner directory not found at $SCANNER_DIR"
+    exit 1
+fi
+
 cd "$SCANNER_DIR"
 
-echo "📡 Scanning US West..."
-# uv run ke-scan scan --months 11 --routes ICN-LAX,ICN-SFO,ICN-SEA --headless > "$TEMP_DIR/us_west.json"
-# (For test/demo, we assume scan works. If fail, empty file created.)
-uv run ke-scan scan --months 6 --routes ICN-LAX,ICN-SFO --headless > "$TEMP_DIR/us_west.json" || echo "{}" > "$TEMP_DIR/us_west.json"
+# 1. Run Scans
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📡 Scanning Routes..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-echo "📡 Scanning Europe..."
-uv run ke-scan scan --months 6 --routes ICN-LHR,ICN-CDG --headless > "$TEMP_DIR/europe.json" || echo "{}" > "$TEMP_DIR/europe.json"
+# US Routes
+echo "🇺🇸 US Routes (LAX, SFO, LAS)..."
+uv run ke-scan scan \
+    --months "$MONTHS" \
+    --classes "$CLASSES" \
+    --routes ICN-LAX,ICN-SFO,ICN-LAS \
+    --headless \
+    > "$TEMP_DIR/us.json" 2>&1 || {
+        echo "⚠️  US scan failed, using empty data"
+        echo '{"results":{}}' > "$TEMP_DIR/us.json"
+    }
+
+# Europe Routes
+echo "🇪🇺 Europe Routes (LHR, FRA, CDG)..."
+uv run ke-scan scan \
+    --months "$MONTHS" \
+    --classes "$CLASSES" \
+    --routes ICN-LHR,ICN-FRA,ICN-CDG \
+    --headless \
+    > "$TEMP_DIR/europe.json" 2>&1 || {
+        echo "⚠️  Europe scan failed, using empty data"
+        echo '{"results":{}}' > "$TEMP_DIR/europe.json"
+    }
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 # 2. Merge Data
 cd "$WEB_DIR"
-echo "🔄 Merging data..."
+echo "🔄 Merging scan results..."
+
 python3 merge_data.py data.json "$TEMP_DIR"/*.json
 
-# 3. Commit & Push (Independent Repo)
-# We assume this folder is already initialized as a git repo connected to overflow4414/mileage-web
-git add data.json index.html
-if git diff --staged --quiet; then
-  echo "👌 No changes to commit."
-else
-  git commit -m "Update mileage data: $(date '+%Y-%m-%d %H:%M')"
-  echo "⬆️ Pushing to GitHub..."
-  git push origin main
+# Verify output
+if [ ! -f "data.json" ]; then
+    echo "❌ Error: data.json not created"
+    exit 1
 fi
 
-echo "✅ Done! Visit: https://overflow4414.github.io/mileage-web/"
+echo "✅ Merged data.json ($(wc -c < data.json) bytes)"
+echo ""
+
+# 3. Git Operations
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📦 Git commit & push..."
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+git add data.json index.html README.md
+
+if git diff --staged --quiet; then
+    echo "👌 No changes to commit"
+else
+    TIMESTAMP=$(date '+%Y-%m-%d %H:%M KST')
+    git commit -m "Update mileage data: $TIMESTAMP"
+    
+    echo "⬆️  Pushing to GitHub..."
+    git push origin main
+    
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "✅ Deployment Complete!"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🌐 Visit: https://overflow4414.github.io/mileage-web/"
+    echo "📊 GitHub: https://github.com/overflow4414/mileage-web"
+fi
+
+# Cleanup
+rm -rf "$TEMP_DIR"
+echo ""
+echo "🧹 Cleaned up temp files"
